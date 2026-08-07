@@ -149,9 +149,35 @@ textarea{resize:vertical;min-height:90px}
     return /^https?:\/\/.+/i.test((value || '').trim());
   }
 
+  function fillTemplate(template, data) {
+    var prenom = data && data.prenom ? String(data.prenom).trim() : '';
+    var lien = (data && data.lien) || '';
+    var prenomPart = prenom ? ' ' + prenom : '';
+    return template.split('{prenom}').join(prenomPart).split('{lien}').join(lien);
+  }
+
+  function cleanPhone(raw) {
+    raw = raw || '';
+    return raw.replace(/[^\d+]/g, '');
+  }
+
+  function isValidPhone(cleaned) {
+    return /^(\+33[1-9]\d{8}|0[1-9]\d{8})$/.test(cleaned);
+  }
+
+  function buildSmsHref(number, message) {
+    var isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    var sep = isIOS ? '&' : '?';
+    return 'sms:' + number + sep + 'body=' + encodeURIComponent(message);
+  }
+
   window.AvisRelance = {
     buildDefaultTemplate: buildDefaultTemplate,
-    isValidUrl: isValidUrl
+    isValidUrl: isValidUrl,
+    fillTemplate: fillTemplate,
+    cleanPhone: cleanPhone,
+    isValidPhone: isValidPhone,
+    buildSmsHref: buildSmsHref
   };
 
   // ---- screen switching ----
@@ -214,6 +240,37 @@ textarea{resize:vertical;min-height:90px}
 
   gearBtn.addEventListener('click', function () {
     showSetup(loadConfig());
+  });
+
+  // ---- main screen wiring ----
+
+  sendBtn.addEventListener('click', function () {
+    var cleaned = cleanPhone(clientPhone.value);
+
+    if (!isValidPhone(cleaned)) {
+      phoneError.classList.add('show');
+      confirmMsg.classList.remove('show');
+      return;
+    }
+    phoneError.classList.remove('show');
+
+    var cfg = loadConfig();
+    var message = fillTemplate(cfg.messageTemplate, {
+      prenom: clientPrenom.value,
+      lien: cfg.reviewLink
+    });
+
+    var href = buildSmsHref(cleaned, message);
+
+    var n = getCounter() + 1;
+    setCounter(n);
+    counterValue.textContent = String(n);
+
+    confirmMsg.classList.add('show');
+    clientPrenom.value = '';
+    clientPhone.value = '';
+
+    window.location.href = href;
   });
 
   // ---- init ----
