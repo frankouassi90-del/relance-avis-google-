@@ -53,7 +53,7 @@ textarea{resize:vertical;min-height:90px}
       <label for="cfgReviewLink">Lien "laisser un avis" Google</label>
       <input id="cfgReviewLink" type="url" placeholder="https://g.page/r/....">
       <p class="hint">Trouvable dans Google Business Profile ou sur votre fiche Google Maps.</p>
-      <p id="cfgLinkError" class="error">Merci de coller un lien valide (commençant par http:// ou https://).</p>
+      <p id="cfgLinkError" class="error" role="alert">Merci de coller un lien valide (commençant par http:// ou https://).</p>
 
       <label for="cfgTemplate">Modèle de message</label>
       <textarea id="cfgTemplate"></textarea>
@@ -78,8 +78,8 @@ textarea{resize:vertical;min-height:90px}
       <input id="clientPrenom" type="text" placeholder="Ex : Marie">
 
       <label for="clientPhone">Numéro de téléphone</label>
-      <input id="clientPhone" type="tel" inputmode="tel" placeholder="06 12 34 56 78">
-      <p id="phoneError" class="error">Merci de saisir un numéro de téléphone valide.</p>
+      <input id="clientPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="06 12 34 56 78">
+      <p id="phoneError" class="error" role="alert">Merci de saisir un numéro de téléphone valide.</p>
 
       <button id="sendBtn" class="btn">Envoyer la demande d'avis</button>
       <p id="confirmMsg" class="confirm">SMS ouvert ✓</p>
@@ -153,7 +153,10 @@ textarea{resize:vertical;min-height:90px}
     var prenom = data && data.prenom ? String(data.prenom).trim() : '';
     var lien = (data && data.lien) || '';
     var prenomPart = prenom ? ' ' + prenom : '';
-    return template.split('{prenom}').join(prenomPart).split('{lien}').join(lien);
+    var result = template.split('{prenom}').join(prenomPart).split('{lien}').join(lien);
+    result = result.replace(/ {2,}/g, ' ');
+    result = result.replace(/ +([,.])/g, '$1');
+    return result;
   }
 
   function cleanPhone(raw) {
@@ -162,7 +165,8 @@ textarea{resize:vertical;min-height:90px}
   }
 
   function isValidPhone(cleaned) {
-    return /^(\+33[1-9]\d{8}|0[1-9]\d{8})$/.test(cleaned);
+    var digits = (cleaned || '').replace(/^\+/, '');
+    return /^\d{10,}$/.test(digits);
   }
 
   function buildSmsHref(number, message) {
@@ -255,6 +259,10 @@ textarea{resize:vertical;min-height:90px}
     phoneError.classList.remove('show');
 
     var cfg = loadConfig();
+    if (!cfg) {
+      showSetup(null);
+      return;
+    }
     var message = fillTemplate(cfg.messageTemplate, {
       prenom: clientPrenom.value,
       lien: cfg.reviewLink
@@ -267,6 +275,9 @@ textarea{resize:vertical;min-height:90px}
     counterValue.textContent = String(n);
 
     confirmMsg.classList.add('show');
+    setTimeout(function () {
+      confirmMsg.classList.remove('show');
+    }, 3000);
     clientPrenom.value = '';
     clientPhone.value = '';
 
