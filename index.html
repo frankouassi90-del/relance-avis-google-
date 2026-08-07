@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Relance Avis — Demandez un avis Google en un geste</title>
+<meta name="description" content="Envoyez une demande d'avis Google par SMS en un geste après chaque client.">
+<style>
+:root{
+  --bg:#f7f8fa; --card:#ffffff; --ink:#1c2430; --muted:#6b7684;
+  --brand:#1d6fd6; --brand-dark:#154f9c;
+  --ok:#1d8f5e; --err:#c0392b; --line:#e4e8ee;
+  --radius:16px; --shadow:0 2px 10px rgba(28,36,48,.07);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--ink);min-height:100vh}
+.app{max-width:480px;margin:0 auto;padding:16px 16px 40px}
+header.top{display:flex;align-items:center;justify-content:space-between;padding:10px 0 18px}
+.logo{font-size:20px;font-weight:800;color:var(--brand)}
+h1{font-size:20px;margin-bottom:6px}
+.sub{color:var(--muted);font-size:14px;margin-bottom:18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px;margin-bottom:12px}
+label{display:block;font-size:14px;font-weight:600;margin:14px 0 6px}
+label:first-child{margin-top:0}
+input,textarea{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;font-size:16px;background:#fff;font-family:inherit}
+textarea{resize:vertical;min-height:90px}
+.hint{font-size:12px;color:var(--muted);margin-top:4px}
+.btn{display:block;width:100%;padding:14px;border:none;border-radius:12px;background:var(--brand);color:#fff;font-size:16px;font-weight:700;cursor:pointer;text-align:center;margin-top:16px}
+.btn:active{background:var(--brand-dark)}
+.btn.ghost{background:none;color:var(--muted);font-weight:600;padding:8px;margin-top:8px;width:auto}
+.error{color:var(--err);font-size:13px;margin-top:6px;display:none}
+.error.show{display:block}
+.counter{background:linear-gradient(135deg,var(--brand),var(--brand-dark));color:#fff;border-radius:var(--radius);padding:18px;margin-bottom:14px;text-align:center}
+.counter .n{font-size:32px;font-weight:800}
+.counter .l{font-size:13px;opacity:.9}
+.gear{background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted)}
+.hidden{display:none}
+.confirm{color:var(--ok);font-size:14px;margin-top:10px;display:none;text-align:center;font-weight:600}
+.confirm.show{display:block}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div id="setupScreen" class="hidden">
+    <header class="top"><div class="logo">Relance Avis</div></header>
+    <h1>Configuration</h1>
+    <p class="sub">À faire une seule fois. Ces informations restent sur cet appareil.</p>
+    <div class="card">
+      <label for="cfgBusinessName">Nom du commerce</label>
+      <input id="cfgBusinessName" type="text" placeholder="Ex : Le Petit Bistrot">
+
+      <label for="cfgReviewLink">Lien "laisser un avis" Google</label>
+      <input id="cfgReviewLink" type="url" placeholder="https://g.page/r/....">
+      <p class="hint">Trouvable dans Google Business Profile ou sur votre fiche Google Maps.</p>
+      <p id="cfgLinkError" class="error">Merci de coller un lien valide (commençant par http:// ou https://).</p>
+
+      <label for="cfgTemplate">Modèle de message</label>
+      <textarea id="cfgTemplate"></textarea>
+      <p class="hint">Utilisez {prenom} pour le prénom du client et {lien} pour le lien d'avis.</p>
+
+      <button id="cfgSaveBtn" class="btn">Enregistrer</button>
+      <button id="cfgCancelBtn" class="btn ghost hidden">Annuler</button>
+    </div>
+  </div>
+
+  <div id="mainScreen" class="hidden">
+    <header class="top">
+      <div class="logo">Relance Avis</div>
+      <button id="gearBtn" class="gear" aria-label="Réglages" title="Réglages">⚙️</button>
+    </header>
+    <div class="counter">
+      <div class="n" id="counterValue">0</div>
+      <div class="l">demandes envoyées</div>
+    </div>
+    <div class="card">
+      <label for="clientPrenom">Prénom du client (optionnel)</label>
+      <input id="clientPrenom" type="text" placeholder="Ex : Marie">
+
+      <label for="clientPhone">Numéro de téléphone</label>
+      <input id="clientPhone" type="tel" inputmode="tel" placeholder="06 12 34 56 78">
+      <p id="phoneError" class="error">Merci de saisir un numéro de téléphone valide.</p>
+
+      <button id="sendBtn" class="btn">Envoyer la demande d'avis</button>
+      <p id="confirmMsg" class="confirm">SMS ouvert ✓</p>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var CONFIG_KEY = 'avisRelance.config';
+  var COUNTER_KEY = 'avisRelance.counter';
+
+  var setupScreen = document.getElementById('setupScreen');
+  var mainScreen = document.getElementById('mainScreen');
+
+  var cfgBusinessName = document.getElementById('cfgBusinessName');
+  var cfgReviewLink = document.getElementById('cfgReviewLink');
+  var cfgTemplate = document.getElementById('cfgTemplate');
+  var cfgLinkError = document.getElementById('cfgLinkError');
+  var cfgSaveBtn = document.getElementById('cfgSaveBtn');
+  var cfgCancelBtn = document.getElementById('cfgCancelBtn');
+
+  var gearBtn = document.getElementById('gearBtn');
+  var counterValue = document.getElementById('counterValue');
+  var clientPrenom = document.getElementById('clientPrenom');
+  var clientPhone = document.getElementById('clientPhone');
+  var phoneError = document.getElementById('phoneError');
+  var sendBtn = document.getElementById('sendBtn');
+  var confirmMsg = document.getElementById('confirmMsg');
+
+  var lastAutoTemplate = '';
+
+  // ---- storage helpers ----
+
+  function loadConfig() {
+    try {
+      return JSON.parse(localStorage.getItem(CONFIG_KEY) || 'null');
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function saveConfig(cfg) {
+    localStorage.setItem(CONFIG_KEY, JSON.stringify(cfg));
+  }
+
+  function getCounter() {
+    var n = parseInt(localStorage.getItem(COUNTER_KEY) || '0', 10);
+    return isNaN(n) ? 0 : n;
+  }
+
+  function setCounter(n) {
+    localStorage.setItem(COUNTER_KEY, String(n));
+  }
+
+  // ---- pure helpers (exposed for manual testing via console) ----
+
+  function buildDefaultTemplate(businessName) {
+    var biz = businessName && businessName.trim() ? businessName.trim() : 'nous';
+    return 'Merci{prenom} pour votre visite chez ' + biz + ' ! Un petit avis Google nous aiderait beaucoup : {lien}';
+  }
+
+  function isValidUrl(value) {
+    return /^https?:\/\/.+/i.test((value || '').trim());
+  }
+
+  window.AvisRelance = {
+    buildDefaultTemplate: buildDefaultTemplate,
+    isValidUrl: isValidUrl
+  };
+
+  // ---- screen switching ----
+
+  function showSetup(existingCfg) {
+    mainScreen.classList.add('hidden');
+    setupScreen.classList.remove('hidden');
+
+    var biz = existingCfg ? existingCfg.businessName : '';
+    cfgBusinessName.value = biz || '';
+    cfgReviewLink.value = existingCfg ? existingCfg.reviewLink : '';
+
+    var tpl = existingCfg ? existingCfg.messageTemplate : buildDefaultTemplate(biz);
+    cfgTemplate.value = tpl;
+    lastAutoTemplate = existingCfg ? '' : tpl;
+
+    cfgCancelBtn.classList.toggle('hidden', !existingCfg);
+    cfgLinkError.classList.remove('show');
+  }
+
+  function showMain() {
+    setupScreen.classList.add('hidden');
+    mainScreen.classList.remove('hidden');
+    counterValue.textContent = String(getCounter());
+    clientPrenom.value = '';
+    clientPhone.value = '';
+    phoneError.classList.remove('show');
+    confirmMsg.classList.remove('show');
+  }
+
+  // ---- config screen wiring ----
+
+  cfgBusinessName.addEventListener('input', function () {
+    if (cfgTemplate.value === lastAutoTemplate) {
+      var next = buildDefaultTemplate(cfgBusinessName.value);
+      cfgTemplate.value = next;
+      lastAutoTemplate = next;
+    }
+  });
+
+  cfgSaveBtn.addEventListener('click', function () {
+    if (!isValidUrl(cfgReviewLink.value)) {
+      cfgLinkError.classList.add('show');
+      return;
+    }
+    cfgLinkError.classList.remove('show');
+
+    saveConfig({
+      businessName: cfgBusinessName.value.trim(),
+      reviewLink: cfgReviewLink.value.trim(),
+      messageTemplate: cfgTemplate.value
+    });
+
+    showMain();
+  });
+
+  cfgCancelBtn.addEventListener('click', function () {
+    showMain();
+  });
+
+  gearBtn.addEventListener('click', function () {
+    showSetup(loadConfig());
+  });
+
+  // ---- init ----
+
+  var cfg = loadConfig();
+  if (cfg) {
+    showMain();
+  } else {
+    showSetup(null);
+  }
+})();
+</script>
+</body>
+</html>
