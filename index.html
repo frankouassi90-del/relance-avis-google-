@@ -22,7 +22,13 @@ h1{font-size:20px;margin-bottom:6px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px;margin-bottom:12px}
 label{display:block;font-size:14px;font-weight:600;margin:14px 0 6px}
 label:first-child{margin-top:0}
-input,textarea{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;font-size:16px;background:#fff;font-family:inherit}
+input,textarea,select{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;font-size:16px;background:#fff;font-family:inherit}
+.tpl-row{border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:10px}
+.tpl-badge{font-size:11px;font-weight:700;color:var(--brand);text-transform:uppercase;letter-spacing:.03em;margin-bottom:6px}
+.tpl-row .tpl-name{font-weight:700;margin-bottom:6px}
+.tpl-row textarea{min-height:70px}
+.tpl-del{background:none;border:none;color:var(--err);font-size:12px;font-weight:600;cursor:pointer;padding:6px 0;margin-top:4px}
+.tpl-del:disabled{opacity:.4;cursor:not-allowed}
 textarea{resize:vertical;min-height:90px}
 .hint{font-size:12px;color:var(--muted);margin-top:4px}
 .btn{display:block;width:100%;padding:14px;border:none;border-radius:12px;background:var(--brand);color:#fff;font-size:16px;font-weight:700;cursor:pointer;text-align:center;margin-top:16px}
@@ -55,9 +61,10 @@ textarea{resize:vertical;min-height:90px}
       <p class="hint">Trouvable dans Google Business Profile ou sur votre fiche Google Maps.</p>
       <p id="cfgLinkError" class="error" role="alert">Merci de coller un lien valide (commençant par http:// ou https://).</p>
 
-      <label for="cfgTemplate">Modèle de message</label>
-      <textarea id="cfgTemplate"></textarea>
-      <p class="hint">Utilisez {prenom} pour le prénom du client et {lien} pour le lien d'avis.</p>
+      <label>Modèles de message</label>
+      <div id="tplList"></div>
+      <button type="button" id="tplAddBtn" class="btn ghost">+ Ajouter un modèle</button>
+      <p class="hint">Utilisez {prenom} pour le prénom du client et {lien} pour le lien d'avis. Le premier modèle de la liste est proposé par défaut à l'envoi.</p>
 
       <button id="cfgSaveBtn" class="btn">Enregistrer</button>
       <button id="cfgCancelBtn" class="btn ghost hidden">Annuler</button>
@@ -74,6 +81,11 @@ textarea{resize:vertical;min-height:90px}
       <div class="l">demandes envoyées</div>
     </div>
     <div class="card">
+      <div id="tplSelectWrap" class="hidden">
+        <label for="templateSelect">Modèle de message</label>
+        <select id="templateSelect"></select>
+      </div>
+
       <label for="clientPrenom">Prénom du client (optionnel)</label>
       <input id="clientPrenom" type="text" placeholder="Ex : Marie">
 
@@ -94,18 +106,23 @@ textarea{resize:vertical;min-height:90px}
 
   var CONFIG_KEY = 'avisRelance.config';
   var COUNTER_KEY = 'avisRelance.counter';
+  var LAST_TEMPLATE_KEY = 'avisRelance.lastTemplate';
+  var DEFAULT_TEMPLATE_NAME = 'Par défaut';
 
   var setupScreen = document.getElementById('setupScreen');
   var mainScreen = document.getElementById('mainScreen');
 
   var cfgBusinessName = document.getElementById('cfgBusinessName');
   var cfgReviewLink = document.getElementById('cfgReviewLink');
-  var cfgTemplate = document.getElementById('cfgTemplate');
+  var tplList = document.getElementById('tplList');
+  var tplAddBtn = document.getElementById('tplAddBtn');
   var cfgLinkError = document.getElementById('cfgLinkError');
   var cfgSaveBtn = document.getElementById('cfgSaveBtn');
   var cfgCancelBtn = document.getElementById('cfgCancelBtn');
 
   var gearBtn = document.getElementById('gearBtn');
+  var templateSelect = document.getElementById('templateSelect');
+  var tplSelectWrap = document.getElementById('tplSelectWrap');
   var counterValue = document.getElementById('counterValue');
   var clientPrenom = document.getElementById('clientPrenom');
   var clientPhone = document.getElementById('clientPhone');
@@ -113,13 +130,28 @@ textarea{resize:vertical;min-height:90px}
   var sendBtn = document.getElementById('sendBtn');
   var confirmMsg = document.getElementById('confirmMsg');
 
-  var lastAutoTemplate = '';
+  var workingTemplates = [];
 
   // ---- storage helpers ----
 
+  function migrateConfig(raw) {
+    if (!raw) return raw;
+    if (raw.templates) return raw;
+    var text = typeof raw.messageTemplate === 'string' ? raw.messageTemplate : buildDefaultTemplate(raw.businessName);
+    return {
+      businessName: raw.businessName || '',
+      reviewLink: raw.reviewLink || '',
+      templates: [{ name: DEFAULT_TEMPLATE_NAME, text: text }],
+      defaultTemplateName: DEFAULT_TEMPLATE_NAME,
+      brandColor: raw.brandColor || '#1d6fd6',
+      logoDataUrl: raw.logoDataUrl || null
+    };
+  }
+
   function loadConfig() {
     try {
-      return JSON.parse(localStorage.getItem(CONFIG_KEY) || 'null');
+      var raw = JSON.parse(localStorage.getItem(CONFIG_KEY) || 'null');
+      return migrateConfig(raw);
     } catch (e) {
       return null;
     }
@@ -181,8 +213,80 @@ textarea{resize:vertical;min-height:90px}
     fillTemplate: fillTemplate,
     cleanPhone: cleanPhone,
     isValidPhone: isValidPhone,
-    buildSmsHref: buildSmsHref
+    buildSmsHref: buildSmsHref,
+    migrateConfig: migrateConfig
   };
+
+  // ---- template list management ----
+
+  function renderTemplateList() {
+    tplList.innerHTML = '';
+    workingTemplates.forEach(function (tpl, i) {
+      var row = document.createElement('div');
+      row.className = 'tpl-row';
+
+      if (i === 0) {
+        var badge = document.createElement('div');
+        badge.className = 'tpl-badge';
+        badge.textContent = 'Modèle par défaut';
+        row.appendChild(badge);
+      }
+
+      var nameInput = document.createElement('input');
+      nameInput.type = 'text';
+      nameInput.value = tpl.name;
+      nameInput.className = 'tpl-name';
+      nameInput.addEventListener('input', function () {
+        workingTemplates[i].name = nameInput.value;
+      });
+
+      var textArea = document.createElement('textarea');
+      textArea.value = tpl.text;
+      textArea.addEventListener('input', function () {
+        workingTemplates[i].text = textArea.value;
+      });
+
+      var delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'tpl-del';
+      delBtn.textContent = 'Supprimer ce modèle';
+      delBtn.disabled = workingTemplates.length <= 1;
+      delBtn.addEventListener('click', function () {
+        if (workingTemplates.length <= 1) return;
+        workingTemplates.splice(i, 1);
+        renderTemplateList();
+      });
+
+      row.appendChild(nameInput);
+      row.appendChild(textArea);
+      row.appendChild(delBtn);
+      tplList.appendChild(row);
+    });
+  }
+
+  tplAddBtn.addEventListener('click', function () {
+    workingTemplates.push({
+      name: 'Modèle ' + (workingTemplates.length + 1),
+      text: buildDefaultTemplate(cfgBusinessName.value)
+    });
+    renderTemplateList();
+  });
+
+  function populateTemplateSelect(cfg) {
+    templateSelect.innerHTML = '';
+    cfg.templates.forEach(function (tpl) {
+      var opt = document.createElement('option');
+      opt.value = tpl.name;
+      opt.textContent = tpl.name;
+      templateSelect.appendChild(opt);
+    });
+
+    tplSelectWrap.classList.toggle('hidden', cfg.templates.length <= 1);
+
+    var lastUsed = localStorage.getItem(LAST_TEMPLATE_KEY);
+    var names = cfg.templates.map(function (t) { return t.name; });
+    templateSelect.value = (lastUsed && names.indexOf(lastUsed) !== -1) ? lastUsed : cfg.defaultTemplateName;
+  }
 
   // ---- screen switching ----
 
@@ -194,9 +298,10 @@ textarea{resize:vertical;min-height:90px}
     cfgBusinessName.value = biz || '';
     cfgReviewLink.value = existingCfg ? existingCfg.reviewLink : '';
 
-    var tpl = existingCfg ? existingCfg.messageTemplate : buildDefaultTemplate(biz);
-    cfgTemplate.value = tpl;
-    lastAutoTemplate = existingCfg ? '' : tpl;
+    workingTemplates = existingCfg
+      ? existingCfg.templates.map(function (t) { return { name: t.name, text: t.text }; })
+      : [{ name: DEFAULT_TEMPLATE_NAME, text: buildDefaultTemplate(biz) }];
+    renderTemplateList();
 
     cfgCancelBtn.classList.toggle('hidden', !existingCfg);
     cfgLinkError.classList.remove('show');
@@ -210,17 +315,12 @@ textarea{resize:vertical;min-height:90px}
     clientPhone.value = '';
     phoneError.classList.remove('show');
     confirmMsg.classList.remove('show');
+
+    var cfg = loadConfig();
+    populateTemplateSelect(cfg);
   }
 
   // ---- config screen wiring ----
-
-  cfgBusinessName.addEventListener('input', function () {
-    if (cfgTemplate.value === lastAutoTemplate) {
-      var next = buildDefaultTemplate(cfgBusinessName.value);
-      cfgTemplate.value = next;
-      lastAutoTemplate = next;
-    }
-  });
 
   cfgSaveBtn.addEventListener('click', function () {
     if (!isValidUrl(cfgReviewLink.value)) {
@@ -229,10 +329,17 @@ textarea{resize:vertical;min-height:90px}
     }
     cfgLinkError.classList.remove('show');
 
+    var existingCfg = loadConfig();
+
     saveConfig({
       businessName: cfgBusinessName.value.trim(),
       reviewLink: cfgReviewLink.value.trim(),
-      messageTemplate: cfgTemplate.value
+      templates: workingTemplates.map(function (t) {
+        return { name: t.name.trim() || 'Sans nom', text: t.text };
+      }),
+      defaultTemplateName: (workingTemplates[0].name.trim() || 'Sans nom'),
+      brandColor: existingCfg ? existingCfg.brandColor : '#1d6fd6',
+      logoDataUrl: existingCfg ? existingCfg.logoDataUrl : null
     });
 
     showMain();
@@ -263,12 +370,18 @@ textarea{resize:vertical;min-height:90px}
       showSetup(null);
       return;
     }
-    var message = fillTemplate(cfg.messageTemplate, {
+
+    var chosenName = templateSelect.value || cfg.defaultTemplateName;
+    var chosen = cfg.templates.filter(function (t) { return t.name === chosenName; })[0] || cfg.templates[0];
+
+    var message = fillTemplate(chosen.text, {
       prenom: clientPrenom.value,
       lien: cfg.reviewLink
     });
 
     var href = buildSmsHref(cleaned, message);
+
+    localStorage.setItem(LAST_TEMPLATE_KEY, chosen.name);
 
     var n = getCounter() + 1;
     setCounter(n);
