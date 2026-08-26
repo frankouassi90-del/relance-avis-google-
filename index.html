@@ -29,6 +29,7 @@ input,textarea,select{width:100%;padding:12px;border:1px solid var(--line);borde
 .tpl-row textarea{min-height:70px}
 .tpl-del{background:none;border:none;color:var(--err);font-size:12px;font-weight:600;cursor:pointer;padding:6px 0;margin-top:4px}
 .tpl-del:disabled{opacity:.4;cursor:not-allowed}
+.btn:disabled{opacity:.4;cursor:not-allowed}
 textarea{resize:vertical;min-height:90px}
 .hint{font-size:12px;color:var(--muted);margin-top:4px}
 .btn{display:block;width:100%;padding:14px;border:none;border-radius:12px;background:var(--brand);color:#fff;font-size:16px;font-weight:700;cursor:pointer;text-align:center;margin-top:16px}
@@ -2685,7 +2686,7 @@ var qrcode = function() {
 
   function csvEscape(value) {
     var s = String(value === null || value === undefined ? '' : value);
-    if (/["\n,]/.test(s)) {
+    if (/["\n\r;]/.test(s)) {
       s = '"' + s.replace(/"/g, '""') + '"';
     }
     return s;
@@ -2696,14 +2697,14 @@ var qrcode = function() {
     list.forEach(function (entry) {
       rows.push([
         entry.prenom || '',
-        entry.telephone || '',
+        '="' + (entry.telephone || '') + '"',
         formatDateFr(entry.date),
         entry.modele || '',
         entry.canal || 'SMS'
       ]);
     });
     return rows.map(function (row) {
-      return row.map(csvEscape).join(',');
+      return row.map(csvEscape).join(';');
     }).join('\r\n');
   }
 
@@ -2711,7 +2712,7 @@ var qrcode = function() {
     var list = getHistory();
     if (!list.length) return;
     var csv = buildHistoryCsv(list);
-    var blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    var blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
     a.href = url;
