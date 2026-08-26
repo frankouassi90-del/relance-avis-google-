@@ -39,7 +39,13 @@ textarea{resize:vertical;min-height:90px}
 .counter{background:linear-gradient(135deg,var(--brand),var(--brand-dark));color:#fff;border-radius:var(--radius);padding:18px;margin-bottom:14px;text-align:center}
 .counter .n{font-size:32px;font-weight:800}
 .counter .l{font-size:13px;opacity:.9}
-.gear{background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted)}
+.icon-btn{background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted)}
+.icon-row{display:flex;gap:6px;align-items:center}
+.logo-row{display:flex;align-items:center;gap:10px}
+.logo-preview{width:40px;height:40px;border-radius:10px;object-fit:cover;background:var(--line);display:none}
+.logo-preview.show{display:block}
+.color-input{width:56px;height:40px;padding:2px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer}
+.header-logo{height:28px;border-radius:6px;margin-right:8px;vertical-align:middle}
 .hidden{display:none}
 .confirm{color:var(--ok);font-size:14px;margin-top:10px;display:none;text-align:center;font-weight:600}
 .confirm.show{display:block}
@@ -61,6 +67,16 @@ textarea{resize:vertical;min-height:90px}
       <p class="hint">Trouvable dans Google Business Profile ou sur votre fiche Google Maps.</p>
       <p id="cfgLinkError" class="error" role="alert">Merci de coller un lien valide (commençant par http:// ou https://).</p>
 
+      <label for="cfgLogoInput">Logo (optionnel)</label>
+      <div class="logo-row">
+        <img id="cfgLogoPreview" class="logo-preview" alt="Aperçu du logo">
+        <input id="cfgLogoInput" type="file" accept="image/*">
+      </div>
+      <button type="button" id="cfgLogoRemoveBtn" class="btn ghost hidden">Retirer le logo</button>
+
+      <label for="cfgColorInput">Couleur de marque</label>
+      <input id="cfgColorInput" type="color" class="color-input" value="#1d6fd6">
+
       <label>Modèles de message</label>
       <div id="tplList"></div>
       <button type="button" id="tplAddBtn" class="btn ghost">+ Ajouter un modèle</button>
@@ -73,8 +89,13 @@ textarea{resize:vertical;min-height:90px}
 
   <div id="mainScreen" class="hidden">
     <header class="top">
-      <div class="logo">Relance Avis</div>
-      <button id="gearBtn" class="gear" aria-label="Réglages" title="Réglages">⚙️</button>
+      <div class="logo" id="mainLogo">
+        <img id="mainLogoImg" class="header-logo hidden" alt="">
+        <span id="mainLogoText">Relance Avis</span>
+      </div>
+      <div class="icon-row">
+        <button id="gearBtn" class="icon-btn" aria-label="Réglages" title="Réglages">⚙️</button>
+      </div>
     </header>
     <div class="counter">
       <div class="n" id="counterValue">0</div>
@@ -116,6 +137,10 @@ textarea{resize:vertical;min-height:90px}
   var cfgReviewLink = document.getElementById('cfgReviewLink');
   var tplList = document.getElementById('tplList');
   var tplAddBtn = document.getElementById('tplAddBtn');
+  var cfgLogoInput = document.getElementById('cfgLogoInput');
+  var cfgLogoPreview = document.getElementById('cfgLogoPreview');
+  var cfgLogoRemoveBtn = document.getElementById('cfgLogoRemoveBtn');
+  var cfgColorInput = document.getElementById('cfgColorInput');
   var cfgLinkError = document.getElementById('cfgLinkError');
   var cfgSaveBtn = document.getElementById('cfgSaveBtn');
   var cfgCancelBtn = document.getElementById('cfgCancelBtn');
@@ -131,6 +156,9 @@ textarea{resize:vertical;min-height:90px}
   var confirmMsg = document.getElementById('confirmMsg');
 
   var workingTemplates = [];
+  var workingLogoDataUrl = null;
+  var mainLogoImg = document.getElementById('mainLogoImg');
+  var mainLogoText = document.getElementById('mainLogoText');
 
   // ---- storage helpers ----
 
@@ -214,8 +242,64 @@ textarea{resize:vertical;min-height:90px}
     cleanPhone: cleanPhone,
     isValidPhone: isValidPhone,
     buildSmsHref: buildSmsHref,
-    migrateConfig: migrateConfig
+    migrateConfig: migrateConfig,
+    darkenColor: darkenColor
   };
+
+  // ---- logo & brand color ----
+
+  function resizeImageFile(file, maxWidth, callback) {
+    var reader = new FileReader();
+    reader.onload = function (e) {
+      var img = new Image();
+      img.onload = function () {
+        var scale = Math.min(1, maxWidth / img.width);
+        var canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        var ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        callback(canvas.toDataURL('image/jpeg', 0.8));
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  cfgLogoInput.addEventListener('change', function () {
+    var file = cfgLogoInput.files && cfgLogoInput.files[0];
+    if (!file) return;
+    resizeImageFile(file, 240, function (dataUrl) {
+      workingLogoDataUrl = dataUrl;
+      cfgLogoPreview.src = dataUrl;
+      cfgLogoPreview.classList.add('show');
+      cfgLogoRemoveBtn.classList.remove('hidden');
+    });
+  });
+
+  cfgLogoRemoveBtn.addEventListener('click', function () {
+    workingLogoDataUrl = null;
+    cfgLogoInput.value = '';
+    cfgLogoPreview.classList.remove('show');
+    cfgLogoPreview.src = '';
+    cfgLogoRemoveBtn.classList.add('hidden');
+  });
+
+  function darkenColor(hex, percent) {
+    var m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+    if (!m) return hex;
+    var num = parseInt(m[1], 16);
+    var r = Math.max(0, Math.round(((num >> 16) & 255) * (1 - percent)));
+    var g = Math.max(0, Math.round(((num >> 8) & 255) * (1 - percent)));
+    var b = Math.max(0, Math.round((num & 255) * (1 - percent)));
+    return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+  }
+
+  function applyBrandColor(hex) {
+    var color = hex || '#1d6fd6';
+    document.documentElement.style.setProperty('--brand', color);
+    document.documentElement.style.setProperty('--brand-dark', darkenColor(color, 0.15));
+  }
 
   // ---- template list management ----
 
@@ -303,6 +387,18 @@ textarea{resize:vertical;min-height:90px}
       : [{ name: DEFAULT_TEMPLATE_NAME, text: buildDefaultTemplate(biz) }];
     renderTemplateList();
 
+    cfgColorInput.value = (existingCfg && existingCfg.brandColor) || '#1d6fd6';
+    workingLogoDataUrl = existingCfg ? existingCfg.logoDataUrl : null;
+    if (workingLogoDataUrl) {
+      cfgLogoPreview.src = workingLogoDataUrl;
+      cfgLogoPreview.classList.add('show');
+      cfgLogoRemoveBtn.classList.remove('hidden');
+    } else {
+      cfgLogoPreview.classList.remove('show');
+      cfgLogoPreview.src = '';
+      cfgLogoRemoveBtn.classList.add('hidden');
+    }
+
     cfgCancelBtn.classList.toggle('hidden', !existingCfg);
     cfgLinkError.classList.remove('show');
   }
@@ -318,6 +414,16 @@ textarea{resize:vertical;min-height:90px}
 
     var cfg = loadConfig();
     populateTemplateSelect(cfg);
+
+    applyBrandColor(cfg.brandColor);
+    if (cfg.logoDataUrl) {
+      mainLogoImg.src = cfg.logoDataUrl;
+      mainLogoImg.classList.remove('hidden');
+    } else {
+      mainLogoImg.classList.add('hidden');
+      mainLogoImg.src = '';
+    }
+    mainLogoText.textContent = cfg.businessName || 'Relance Avis';
   }
 
   // ---- config screen wiring ----
@@ -338,8 +444,8 @@ textarea{resize:vertical;min-height:90px}
         return { name: t.name.trim() || 'Sans nom', text: t.text };
       }),
       defaultTemplateName: (workingTemplates[0].name.trim() || 'Sans nom'),
-      brandColor: existingCfg ? existingCfg.brandColor : '#1d6fd6',
-      logoDataUrl: existingCfg ? existingCfg.logoDataUrl : null
+      brandColor: cfgColorInput.value,
+      logoDataUrl: workingLogoDataUrl
     });
 
     showMain();
@@ -400,6 +506,7 @@ textarea{resize:vertical;min-height:90px}
   // ---- init ----
 
   var cfg = loadConfig();
+  applyBrandColor(cfg ? cfg.brandColor : '#1d6fd6');
   if (cfg) {
     showMain();
   } else {
