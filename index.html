@@ -129,8 +129,9 @@ textarea{resize:vertical;min-height:90px}
       <p id="phoneError" class="error" role="alert">Merci de saisir un numéro de téléphone valide.</p>
       <p id="duplicateWarn" class="warn" role="alert"></p>
 
-      <button id="sendBtn" class="btn">Envoyer la demande d'avis</button>
-      <p id="confirmMsg" class="confirm">SMS ouvert ✓</p>
+      <button id="sendBtn" class="btn">Envoyer par SMS</button>
+      <button id="whatsappBtn" class="btn">Envoyer par WhatsApp</button>
+      <p id="confirmMsg" class="confirm"></p>
     </div>
   </div>
 
@@ -2504,6 +2505,7 @@ var qrcode = function() {
   var clientPhone = document.getElementById('clientPhone');
   var phoneError = document.getElementById('phoneError');
   var sendBtn = document.getElementById('sendBtn');
+  var whatsappBtn = document.getElementById('whatsappBtn');
   var confirmMsg = document.getElementById('confirmMsg');
 
   var workingTemplates = [];
@@ -2586,6 +2588,18 @@ var qrcode = function() {
     return 'sms:' + number + sep + 'body=' + encodeURIComponent(message);
   }
 
+  function toWhatsAppNumber(cleaned) {
+    var n = (cleaned || '').replace(/^\+/, '');
+    if (n.charAt(0) === '0') {
+      return '33' + n.slice(1);
+    }
+    return n;
+  }
+
+  function buildWhatsAppHref(number, message) {
+    return 'https://wa.me/' + number + '?text=' + encodeURIComponent(message);
+  }
+
   // ---- history ----
 
   function pad2(n) {
@@ -2606,7 +2620,9 @@ var qrcode = function() {
     buildSmsHref: buildSmsHref,
     migrateConfig: migrateConfig,
     darkenColor: darkenColor,
-    formatDateFr: formatDateFr
+    formatDateFr: formatDateFr,
+    toWhatsAppNumber: toWhatsAppNumber,
+    buildWhatsAppHref: buildWhatsAppHref
   };
 
   function getHistory() {
@@ -2924,7 +2940,7 @@ var qrcode = function() {
 
   // ---- main screen wiring ----
 
-  sendBtn.addEventListener('click', function () {
+  function sendViaChannel(canal) {
     var cleaned = cleanPhone(clientPhone.value);
 
     if (!isValidPhone(cleaned)) {
@@ -2960,20 +2976,24 @@ var qrcode = function() {
       lien: cfg.reviewLink
     });
 
-    var href = buildSmsHref(cleaned, message);
+    var href = canal === 'WhatsApp'
+      ? buildWhatsAppHref(toWhatsAppNumber(cleaned), message)
+      : buildSmsHref(cleaned, message);
 
     localStorage.setItem(LAST_TEMPLATE_KEY, chosen.name);
     addHistoryEntry({
       prenom: clientPrenom.value.trim(),
       telephone: cleaned,
       date: new Date().toISOString(),
-      modele: chosen.name
+      modele: chosen.name,
+      canal: canal
     });
 
     var n = getCounter() + 1;
     setCounter(n);
     counterValue.textContent = String(n);
 
+    confirmMsg.textContent = canal === 'WhatsApp' ? 'WhatsApp ouvert ✓' : 'SMS ouvert ✓';
     confirmMsg.classList.add('show');
     setTimeout(function () {
       confirmMsg.classList.remove('show');
@@ -2982,6 +3002,14 @@ var qrcode = function() {
     clientPhone.value = '';
 
     window.location.href = href;
+  }
+
+  sendBtn.addEventListener('click', function () {
+    sendViaChannel('SMS');
+  });
+
+  whatsappBtn.addEventListener('click', function () {
+    sendViaChannel('WhatsApp');
   });
 
   // ---- init ----
