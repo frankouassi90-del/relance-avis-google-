@@ -83,6 +83,7 @@ textarea{resize:vertical;min-height:90px}
         <img id="cfgLogoPreview" class="logo-preview" alt="Aperçu du logo">
         <input id="cfgLogoInput" type="file" accept="image/*">
       </div>
+      <p id="cfgLogoError" class="error" role="alert">Ce fichier n'a pas pu être utilisé comme logo. Merci d'essayer une autre image.</p>
       <button type="button" id="cfgLogoRemoveBtn" class="btn ghost hidden">Retirer le logo</button>
 
       <label for="cfgColorInput">Couleur de marque</label>
@@ -2476,6 +2477,7 @@ var qrcode = function() {
   var cfgLogoInput = document.getElementById('cfgLogoInput');
   var cfgLogoPreview = document.getElementById('cfgLogoPreview');
   var cfgLogoRemoveBtn = document.getElementById('cfgLogoRemoveBtn');
+  var cfgLogoError = document.getElementById('cfgLogoError');
   var cfgColorInput = document.getElementById('cfgColorInput');
   var cfgLinkError = document.getElementById('cfgLinkError');
   var cfgSaveBtn = document.getElementById('cfgSaveBtn');
@@ -2653,9 +2655,7 @@ var qrcode = function() {
   }
 
   function showHistory() {
-    mainScreen.classList.add('hidden');
-    setupScreen.classList.add('hidden');
-    historyScreen.classList.remove('hidden');
+    showScreen(historyScreen);
     renderHistory();
   }
 
@@ -2673,8 +2673,7 @@ var qrcode = function() {
   function showQr() {
     var cfg = loadConfig();
     if (!cfg || !cfg.reviewLink) return;
-    mainScreen.classList.add('hidden');
-    qrScreen.classList.remove('hidden');
+    showScreen(qrScreen);
     renderQr(cfg);
   }
 
@@ -2688,10 +2687,16 @@ var qrcode = function() {
 
   // ---- logo & brand color ----
 
-  function resizeImageFile(file, maxWidth, callback) {
+  function resizeImageFile(file, maxWidth, callback, onError) {
     var reader = new FileReader();
+    reader.onerror = function () {
+      if (onError) onError();
+    };
     reader.onload = function (e) {
       var img = new Image();
+      img.onerror = function () {
+        if (onError) onError();
+      };
       img.onload = function () {
         var scale = Math.min(1, maxWidth / img.width);
         var canvas = document.createElement('canvas');
@@ -2709,11 +2714,15 @@ var qrcode = function() {
   cfgLogoInput.addEventListener('change', function () {
     var file = cfgLogoInput.files && cfgLogoInput.files[0];
     if (!file) return;
+    cfgLogoError.classList.remove('show');
     resizeImageFile(file, 240, function (dataUrl) {
       workingLogoDataUrl = dataUrl;
       cfgLogoPreview.src = dataUrl;
       cfgLogoPreview.classList.add('show');
       cfgLogoRemoveBtn.classList.remove('hidden');
+    }, function () {
+      cfgLogoInput.value = '';
+      cfgLogoError.classList.add('show');
     });
   });
 
@@ -2789,8 +2798,14 @@ var qrcode = function() {
   }
 
   tplAddBtn.addEventListener('click', function () {
+    var n = workingTemplates.length + 1;
+    var candidateName = 'Modèle ' + n;
+    while (workingTemplates.some(function (t) { return t.name === candidateName; })) {
+      n++;
+      candidateName = 'Modèle ' + n;
+    }
     workingTemplates.push({
-      name: 'Modèle ' + (workingTemplates.length + 1),
+      name: candidateName,
       text: buildDefaultTemplate(cfgBusinessName.value)
     });
     renderTemplateList();
@@ -2814,10 +2829,16 @@ var qrcode = function() {
 
   // ---- screen switching ----
 
-  function showSetup(existingCfg) {
+  function showScreen(el) {
+    setupScreen.classList.add('hidden');
     mainScreen.classList.add('hidden');
-    setupScreen.classList.remove('hidden');
     historyScreen.classList.add('hidden');
+    qrScreen.classList.add('hidden');
+    el.classList.remove('hidden');
+  }
+
+  function showSetup(existingCfg) {
+    showScreen(setupScreen);
 
     var biz = existingCfg ? existingCfg.businessName : '';
     cfgBusinessName.value = biz || '';
@@ -2842,13 +2863,11 @@ var qrcode = function() {
 
     cfgCancelBtn.classList.toggle('hidden', !existingCfg);
     cfgLinkError.classList.remove('show');
+    cfgLogoError.classList.remove('show');
   }
 
   function showMain() {
-    setupScreen.classList.add('hidden');
-    mainScreen.classList.remove('hidden');
-    historyScreen.classList.add('hidden');
-    qrScreen.classList.add('hidden');
+    showScreen(mainScreen);
     counterValue.textContent = String(getCounter());
     clientPrenom.value = '';
     clientPhone.value = '';
@@ -2880,8 +2899,6 @@ var qrcode = function() {
       return;
     }
     cfgLinkError.classList.remove('show');
-
-    var existingCfg = loadConfig();
 
     saveConfig({
       businessName: cfgBusinessName.value.trim(),
