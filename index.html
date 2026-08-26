@@ -49,6 +49,14 @@ textarea{resize:vertical;min-height:90px}
 .hidden{display:none}
 .confirm{color:var(--ok);font-size:14px;margin-top:10px;display:none;text-align:center;font-weight:600}
 .confirm.show{display:block}
+.history-item{padding:10px 0;border-bottom:1px solid var(--line)}
+.history-item:last-child{border-bottom:none}
+.history-item .h-name{font-weight:700}
+.history-item .h-meta{font-size:12px;color:var(--muted);margin-top:2px}
+.history-empty{color:var(--muted);font-size:14px;text-align:center;padding:24px 0}
+.back-link{display:inline-block;margin-bottom:14px;color:var(--brand);font-size:14px;font-weight:600;text-decoration:none;cursor:pointer;background:none;border:none;padding:0}
+.warn{color:#a15c00;background:#fff3e0;border:1px solid #ffd9a0;border-radius:10px;padding:10px 12px;font-size:13px;margin-top:10px;display:none}
+.warn.show{display:block}
 </style>
 </head>
 <body>
@@ -94,6 +102,7 @@ textarea{resize:vertical;min-height:90px}
         <span id="mainLogoText">Relance Avis</span>
       </div>
       <div class="icon-row">
+        <button id="historyBtn" class="icon-btn" aria-label="Historique" title="Historique">🕘</button>
         <button id="gearBtn" class="icon-btn" aria-label="Réglages" title="Réglages">⚙️</button>
       </div>
     </header>
@@ -113,9 +122,20 @@ textarea{resize:vertical;min-height:90px}
       <label for="clientPhone">Numéro de téléphone</label>
       <input id="clientPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="06 12 34 56 78">
       <p id="phoneError" class="error" role="alert">Merci de saisir un numéro de téléphone valide.</p>
+      <p id="duplicateWarn" class="warn" role="alert"></p>
 
       <button id="sendBtn" class="btn">Envoyer la demande d'avis</button>
       <p id="confirmMsg" class="confirm">SMS ouvert ✓</p>
+    </div>
+  </div>
+
+  <div id="historyScreen" class="hidden">
+    <button type="button" id="historyBackBtn" class="back-link">← Retour</button>
+    <h1>Historique</h1>
+    <p class="sub">Derniers envois de demandes d'avis.</p>
+    <div class="card">
+      <div id="historyList"></div>
+      <p id="historyEmpty" class="history-empty hidden">Aucun envoi pour l'instant.</p>
     </div>
   </div>
 
@@ -129,6 +149,7 @@ textarea{resize:vertical;min-height:90px}
   var COUNTER_KEY = 'avisRelance.counter';
   var LAST_TEMPLATE_KEY = 'avisRelance.lastTemplate';
   var DEFAULT_TEMPLATE_NAME = 'Par défaut';
+  var HISTORY_KEY = 'avisRelance.history';
 
   var setupScreen = document.getElementById('setupScreen');
   var mainScreen = document.getElementById('mainScreen');
@@ -146,6 +167,14 @@ textarea{resize:vertical;min-height:90px}
   var cfgCancelBtn = document.getElementById('cfgCancelBtn');
 
   var gearBtn = document.getElementById('gearBtn');
+  var historyBtn = document.getElementById('historyBtn');
+  var historyScreen = document.getElementById('historyScreen');
+  var historyBackBtn = document.getElementById('historyBackBtn');
+  var historyList = document.getElementById('historyList');
+  var historyEmpty = document.getElementById('historyEmpty');
+  var duplicateWarn = document.getElementById('duplicateWarn');
+  var pendingDuplicateConfirm = false;
+
   var templateSelect = document.getElementById('templateSelect');
   var tplSelectWrap = document.getElementById('tplSelectWrap');
   var counterValue = document.getElementById('counterValue');
@@ -235,6 +264,17 @@ textarea{resize:vertical;min-height:90px}
     return 'sms:' + number + sep + 'body=' + encodeURIComponent(message);
   }
 
+  // ---- history ----
+
+  function pad2(n) {
+    return (n < 10 ? '0' : '') + n;
+  }
+
+  function formatDateFr(iso) {
+    var d = new Date(iso);
+    return pad2(d.getDate()) + '/' + pad2(d.getMonth() + 1) + '/' + d.getFullYear();
+  }
+
   window.AvisRelance = {
     buildDefaultTemplate: buildDefaultTemplate,
     isValidUrl: isValidUrl,
@@ -243,8 +283,69 @@ textarea{resize:vertical;min-height:90px}
     isValidPhone: isValidPhone,
     buildSmsHref: buildSmsHref,
     migrateConfig: migrateConfig,
-    darkenColor: darkenColor
+    darkenColor: darkenColor,
+    formatDateFr: formatDateFr
   };
+
+  function getHistory() {
+    try {
+      var list = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+      return Array.isArray(list) ? list : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function addHistoryEntry(entry) {
+    var list = getHistory();
+    list.unshift(entry);
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(list));
+  }
+
+  function findHistoryByPhone(cleanedPhone) {
+    var list = getHistory();
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].telephone === cleanedPhone) return list[i];
+    }
+    return null;
+  }
+
+  function renderHistory() {
+    var list = getHistory();
+    historyList.innerHTML = '';
+    historyEmpty.classList.toggle('hidden', list.length > 0);
+    list.forEach(function (entry) {
+      var row = document.createElement('div');
+      row.className = 'history-item';
+
+      var name = document.createElement('div');
+      name.className = 'h-name';
+      name.textContent = (entry.prenom ? entry.prenom + ' — ' : '') + entry.telephone;
+
+      var meta = document.createElement('div');
+      meta.className = 'h-meta';
+      meta.textContent = formatDateFr(entry.date) + ' · ' + entry.modele;
+
+      row.appendChild(name);
+      row.appendChild(meta);
+      historyList.appendChild(row);
+    });
+  }
+
+  function showHistory() {
+    mainScreen.classList.add('hidden');
+    setupScreen.classList.add('hidden');
+    historyScreen.classList.remove('hidden');
+    renderHistory();
+  }
+
+  historyBtn.addEventListener('click', showHistory);
+  historyBackBtn.addEventListener('click', showMain);
+
+  clientPhone.addEventListener('input', function () {
+    pendingDuplicateConfirm = false;
+    duplicateWarn.classList.remove('show');
+  });
 
   // ---- logo & brand color ----
 
@@ -377,6 +478,7 @@ textarea{resize:vertical;min-height:90px}
   function showSetup(existingCfg) {
     mainScreen.classList.add('hidden');
     setupScreen.classList.remove('hidden');
+    historyScreen.classList.add('hidden');
 
     var biz = existingCfg ? existingCfg.businessName : '';
     cfgBusinessName.value = biz || '';
@@ -406,11 +508,15 @@ textarea{resize:vertical;min-height:90px}
   function showMain() {
     setupScreen.classList.add('hidden');
     mainScreen.classList.remove('hidden');
+    historyScreen.classList.add('hidden');
     counterValue.textContent = String(getCounter());
     clientPrenom.value = '';
     clientPhone.value = '';
     phoneError.classList.remove('show');
     confirmMsg.classList.remove('show');
+
+    pendingDuplicateConfirm = false;
+    duplicateWarn.classList.remove('show');
 
     var cfg = loadConfig();
     populateTemplateSelect(cfg);
@@ -471,6 +577,18 @@ textarea{resize:vertical;min-height:90px}
     }
     phoneError.classList.remove('show');
 
+    if (!pendingDuplicateConfirm) {
+      var existing = findHistoryByPhone(cleaned);
+      if (existing) {
+        duplicateWarn.textContent = '⚠️ Déjà contacté le ' + formatDateFr(existing.date) + ' — cliquez à nouveau pour envoyer quand même.';
+        duplicateWarn.classList.add('show');
+        pendingDuplicateConfirm = true;
+        return;
+      }
+    }
+    pendingDuplicateConfirm = false;
+    duplicateWarn.classList.remove('show');
+
     var cfg = loadConfig();
     if (!cfg) {
       showSetup(null);
@@ -488,6 +606,12 @@ textarea{resize:vertical;min-height:90px}
     var href = buildSmsHref(cleaned, message);
 
     localStorage.setItem(LAST_TEMPLATE_KEY, chosen.name);
+    addHistoryEntry({
+      prenom: clientPrenom.value.trim(),
+      telephone: cleaned,
+      date: new Date().toISOString(),
+      modele: chosen.name
+    });
 
     var n = getCounter() + 1;
     setCounter(n);
